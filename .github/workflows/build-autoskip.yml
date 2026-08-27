@@ -19,7 +19,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          mkdir -p app/src/main/java/com/example/autoskip
+          mkdir -p app/src/main/java/com/example/autoskip2
           mkdir -p app/src/main/res/xml
           mkdir -p app/src/main/res/values
 
@@ -30,15 +30,15 @@ jobs:
           }
 
           android {
-              namespace = "com.example.autoskip"
+              namespace = "com.example.autoskip2"
               compileSdk = 35
 
               defaultConfig {
-                  applicationId = "com.example.autoskip"
+                  applicationId = "com.example.autoskip2"
                   minSdk = 24
                   targetSdk = 35
-                  versionCode = 1
-                  versionName = "0.1"
+                  versionCode = 2
+                  versionName = "0.2"
               }
 
               compileOptions {
@@ -81,7 +81,7 @@ jobs:
                   <service
                       android:name=".SkipAccessibilityService"
                       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-                      android:exported="true">
+                      android:exported="false">
 
                       <intent-filter>
                           <action android:name="android.accessibilityservice.AccessibilityService" />
@@ -98,8 +98,8 @@ jobs:
           </manifest>
           EOF
 
-          cat > app/src/main/java/com/example/autoskip/MainActivity.kt <<'EOF'
-          package com.example.autoskip
+          cat > app/src/main/java/com/example/autoskip2/MainActivity.kt <<'EOF'
+          package com.example.autoskip2
 
           import android.content.Intent
           import android.os.Bundle
@@ -116,7 +116,7 @@ jobs:
 
                   val info = TextView(this).apply {
                       text = """
-                          AutoSkip 0.1
+                          AutoSkip 0.2
 
                           1. Open Accessibility Settings
                           2. Enable AutoSkip
@@ -140,6 +140,7 @@ jobs:
 
                   val layout = LinearLayout(this).apply {
                       orientation = LinearLayout.VERTICAL
+                      setPadding(20, 20, 20, 20)
                       addView(info)
                       addView(button)
                   }
@@ -149,8 +150,8 @@ jobs:
           }
           EOF
 
-          cat > app/src/main/java/com/example/autoskip/SkipAccessibilityService.kt <<'EOF'
-          package com.example.autoskip
+          cat > app/src/main/java/com/example/autoskip2/SkipAccessibilityService.kt <<'EOF'
+          package com.example.autoskip2
 
           import android.accessibilityservice.AccessibilityService
           import android.accessibilityservice.GestureDescription
@@ -185,37 +186,54 @@ jobs:
                   Log.i(TAG, "AutoSkip accessibility service connected")
               }
 
-              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+              override fun onAccessibilityEvent(
+                  event: AccessibilityEvent?
+              ) {
 
                   if (event == null) return
 
-                  val packageName =
-                      event.packageName?.toString() ?: return
-
-                  if (packageName != CHROME_PACKAGE) return
-
-                  val now = System.currentTimeMillis()
-
-                  if (now - lastClickTime < DEBOUNCE_MS) {
+                  if (
+                      event.packageName?.toString() != CHROME_PACKAGE
+                  ) {
                       return
                   }
 
-                  val root = rootInActiveWindow ?: return
+                  val now = System.currentTimeMillis()
 
-                  val skipNode = findSkipNode(root) ?: return
+                  if (
+                      now - lastClickTime < DEBOUNCE_MS
+                  ) {
+                      return
+                  }
 
-                  logNode(skipNode)
+                  val root =
+                      rootInActiveWindow ?: return
 
-                  if (clickNodeOrParent(skipNode)) {
+                  val skipNode =
+                      findSkipNode(root) ?: return
 
-                      Log.i(TAG, "Skip clicked using ACTION_CLICK")
+                  if (
+                      clickNodeOrParent(skipNode)
+                  ) {
+
+                      Log.i(
+                          TAG,
+                          "Skip clicked using ACTION_CLICK"
+                      )
+
                       lastClickTime = now
                       return
                   }
 
-                  if (tapNode(skipNode)) {
+                  if (
+                      tapNode(skipNode)
+                  ) {
 
-                      Log.i(TAG, "Skip clicked using gesture")
+                      Log.i(
+                          TAG,
+                          "Skip clicked using gesture"
+                      )
+
                       lastClickTime = now
                   }
               }
@@ -248,13 +266,20 @@ jobs:
                       return node
                   }
 
-                  for (i in 0 until node.childCount) {
+                  for (
+                      i in 0 until node.childCount
+                  ) {
 
-                      val child = node.getChild(i) ?: continue
+                      val child =
+                          node.getChild(i)
+                              ?: continue
 
-                      val result = findSkipNode(child)
+                      val result =
+                          findSkipNode(child)
 
-                      if (result != null) {
+                      if (
+                          result != null
+                      ) {
                           return result
                       }
                   }
@@ -262,51 +287,71 @@ jobs:
                   return null
               }
 
-              private fun matchesSkip(value: String): Boolean {
+              private fun matchesSkip(
+                  value: String
+              ): Boolean {
 
-                  if (value.isBlank()) return false
+                  if (
+                      value.isBlank()
+                  ) {
+                      return false
+                  }
 
-                  return skipTerms.any { term ->
+                  return skipTerms.any {
+                      term ->
+
                       value == term ||
-                      value.startsWith("$term ")
+                      value.startsWith(
+                          "$term "
+                      )
                   }
               }
 
               private fun clickNodeOrParent(
-                  originalNode: AccessibilityNodeInfo
+                  originalNode:
+                      AccessibilityNodeInfo
               ): Boolean {
 
-                  var node: AccessibilityNodeInfo? = originalNode
+                  var node:
+                      AccessibilityNodeInfo? =
+                      originalNode
 
                   repeat(6) {
 
-                      val current = node ?: return false
+                      val current =
+                          node ?: return false
 
-                      if (current.isClickable) {
+                      if (
+                          current.isVisibleToUser &&
+                          current.isClickable
+                      ) {
 
-                          val result =
+                          if (
                               current.performAction(
                                   AccessibilityNodeInfo.ACTION_CLICK
                               )
-
-                          if (result) {
+                          ) {
                               return true
                           }
                       }
 
-                      node = current.parent
+                      node =
+                          current.parent
                   }
 
                   return false
               }
 
               private fun tapNode(
-                  node: AccessibilityNodeInfo
+                  node:
+                      AccessibilityNodeInfo
               ): Boolean {
 
                   val rect = Rect()
 
-                  node.getBoundsInScreen(rect)
+                  node.getBoundsInScreen(
+                      rect
+                  )
 
                   if (
                       rect.width() <= 0 ||
@@ -315,28 +360,30 @@ jobs:
                       return false
                   }
 
-                  val x = rect.centerX().toFloat()
-                  val y = rect.centerY().toFloat()
+                  val path =
+                      Path().apply {
 
-                  val path = Path().apply {
-                      moveTo(x, y)
-                  }
+                          moveTo(
+                              rect.centerX()
+                                  .toFloat(),
+
+                              rect.centerY()
+                                  .toFloat()
+                          )
+                      }
 
                   val gesture =
-                      GestureDescription.Builder()
+                      GestureDescription
+                          .Builder()
                           .addStroke(
-                              GestureDescription.StrokeDescription(
-                                  path,
-                                  0,
-                                  80
-                              )
+                              GestureDescription
+                                  .StrokeDescription(
+                                      path,
+                                      0,
+                                      80
+                                  )
                           )
                           .build()
-
-                  Log.i(
-                      TAG,
-                      "Trying gesture tap at x=$x y=$y"
-                  )
 
                   return dispatchGesture(
                       gesture,
@@ -345,30 +392,12 @@ jobs:
                   )
               }
 
-              private fun logNode(
-                  node: AccessibilityNodeInfo
-              ) {
-
-                  val rect = Rect()
-                  node.getBoundsInScreen(rect)
+              override fun onInterrupt() {
 
                   Log.i(
                       TAG,
-                      """
-                      Skip candidate:
-                      text=${node.text}
-                      description=${node.contentDescription}
-                      class=${node.className}
-                      clickable=${node.isClickable}
-                      visible=${node.isVisibleToUser}
-                      viewId=${node.viewIdResourceName}
-                      bounds=$rect
-                      """.trimIndent()
+                      "Accessibility service interrupted"
                   )
-              }
-
-              override fun onInterrupt() {
-                  Log.i(TAG, "Accessibility service interrupted")
               }
           }
           EOF
@@ -385,20 +414,30 @@ jobs:
               android:canPerformGestures="true"
               android:packageNames="com.android.chrome"
               android:description="@string/accessibility_description" />
+
           EOF
 
           cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources>
-              <string name="app_name">AutoSkip</string>
-              <string name="accessibility_description">Automatically presses the YouTube Skip Ad button in Chrome.</string>
+
+              <string name="app_name">
+                  AutoSkip
+              </string>
+
+              <string name="accessibility_description">
+                  Automatically presses the YouTube Skip Ad button in Chrome.
+              </string>
+
           </resources>
           EOF
 
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <resources>
+
               <style
                   name="AppTheme"
                   parent="Theme.AppCompat.Light.DarkActionBar" />
+
           </resources>
           EOF
 
@@ -419,6 +458,7 @@ jobs:
           }
 
           dependencyResolutionManagement {
+
               repositoriesMode.set(
                   RepositoriesMode.FAIL_ON_PROJECT_REPOS
               )
@@ -429,7 +469,9 @@ jobs:
               }
           }
 
-          rootProject.name = "AutoSkip"
+          rootProject.name =
+              "AutoSkip"
+
           include(":app")
           EOF
 
@@ -450,7 +492,9 @@ jobs:
 
       - name: Install Android SDK 35
         run: |
-          sdkmanager "platforms;android-35" "build-tools;35.0.0"
+          sdkmanager \
+            "platforms;android-35" \
+            "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -459,11 +503,8 @@ jobs:
 
       - name: Build APK
         run: |
-          gradle --no-daemon :app:assembleDebug
+          gradle \
+            --no-daemon \
+            :app:assembleDebug
 
-      - name: Upload APK
-        uses: actions/upload-artifact@v4
-        with:
-          name: AutoSkip-debug-apk
-          path: app/build/outputs/apk/debug/app-debug.apk
-          if-no-files-found: error
+      - name:
