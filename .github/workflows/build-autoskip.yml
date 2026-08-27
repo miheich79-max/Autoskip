@@ -19,7 +19,7 @@ jobs:
         run: |
           set -e
 
-          mkdir -p app/src/main/java/com/example/autoskip2
+          mkdir -p app/src/main/java/com/example/autoskip3
           mkdir -p app/src/main/res/xml
           mkdir -p app/src/main/res/values
 
@@ -30,15 +30,15 @@ jobs:
           }
 
           android {
-              namespace = "com.example.autoskip2"
+              namespace = "com.example.autoskip3"
               compileSdk = 35
 
               defaultConfig {
-                  applicationId = "com.example.autoskip2"
+                  applicationId = "com.example.autoskip3"
                   minSdk = 24
                   targetSdk = 35
-                  versionCode = 2
-                  versionName = "0.2"
+                  versionCode = 3
+                  versionName = "0.3"
               }
 
               compileOptions {
@@ -98,140 +98,337 @@ jobs:
           </manifest>
           EOF
 
-          cat > app/src/main/java/com/example/autoskip2/MainActivity.kt <<'EOF'
-          package com.example.autoskip2
+          cat > app/src/main/java/com/example/autoskip3/DiagnosticStore.kt <<'EOF'
+          package com.example.autoskip3
+
+          object DiagnosticStore {
+
+              @Volatile
+              var eventCount: Int = 0
+
+              @Volatile
+              var lastPackage: String = "-"
+
+              @Volatile
+              var lastEvent: String = "-"
+
+              @Volatile
+              var lastCandidate: String = "No candidate"
+
+              @Volatile
+              var lastAction: String = "Waiting"
+
+              @Volatile
+              var lastTree: String = "No Chrome data yet"
+          }
+          EOF
+
+          cat > app/src/main/java/com/example/autoskip3/MainActivity.kt <<'EOF'
+          package com.example.autoskip3
 
           import android.content.Intent
           import android.os.Bundle
+          import android.os.Handler
+          import android.os.Looper
           import android.provider.Settings
           import android.widget.Button
           import android.widget.LinearLayout
+          import android.widget.ScrollView
           import android.widget.TextView
           import androidx.appcompat.app.AppCompatActivity
 
           class MainActivity : AppCompatActivity() {
 
-              override fun onCreate(savedInstanceState: Bundle?) {
-                  super.onCreate(savedInstanceState)
+              private lateinit var statusView: TextView
 
-                  val info = TextView(this).apply {
-                      text = """
-                          AutoSkip 0.2
+              private val handler =
+                  Handler(Looper.getMainLooper())
 
-                          1. Open Accessibility Settings
-                          2. Enable AutoSkip
-                          3. Open YouTube in Chrome
-                          4. AutoSkip will press Skip when available
-                      """.trimIndent()
+              private val updater =
+                  object : Runnable {
+                      override fun run() {
 
-                      textSize = 18f
-                      setPadding(40, 60, 40, 30)
-                  }
+                          statusView.text =
+                              """
+                              AutoSkip 0.3 diagnostic
 
-                  val button = Button(this).apply {
-                      text = "Open Accessibility Settings"
+                              Chrome events:
+                              ${DiagnosticStore.eventCount}
 
-                      setOnClickListener {
-                          startActivity(
-                              Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                              Last package:
+                              ${DiagnosticStore.lastPackage}
+
+                              Last event:
+                              ${DiagnosticStore.lastEvent}
+
+                              Last candidate:
+                              ${DiagnosticStore.lastCandidate}
+
+                              Last action:
+                              ${DiagnosticStore.lastAction}
+
+                              Visible accessibility text:
+                              -------------------------
+                              ${DiagnosticStore.lastTree}
+                              """.trimIndent()
+
+                          handler.postDelayed(
+                              this,
+                              1000
                           )
                       }
                   }
 
-                  val layout = LinearLayout(this).apply {
-                      orientation = LinearLayout.VERTICAL
-                      setPadding(20, 20, 20, 20)
-                      addView(info)
-                      addView(button)
-                  }
+              override fun onCreate(
+                  savedInstanceState: Bundle?
+              ) {
+                  super.onCreate(savedInstanceState)
 
-                  setContentView(layout)
+                  val title =
+                      TextView(this).apply {
+                          text = "AutoSkip 0.3"
+                          textSize = 22f
+                          setPadding(30, 30, 30, 20)
+                      }
+
+                  val accessibilityButton =
+                      Button(this).apply {
+                          text = "Open Accessibility Settings"
+
+                          setOnClickListener {
+                              startActivity(
+                                  Intent(
+                                      Settings.ACTION_ACCESSIBILITY_SETTINGS
+                                  )
+                              )
+                          }
+                      }
+
+                  statusView =
+                      TextView(this).apply {
+                          textSize = 15f
+                          setPadding(30, 20, 30, 40)
+                      }
+
+                  val container =
+                      LinearLayout(this).apply {
+                          orientation =
+                              LinearLayout.VERTICAL
+
+                          addView(title)
+                          addView(accessibilityButton)
+                          addView(statusView)
+                      }
+
+                  val scrollView =
+                      ScrollView(this).apply {
+                          addView(container)
+                      }
+
+                  setContentView(scrollView)
+              }
+
+              override fun onResume() {
+                  super.onResume()
+
+                  handler.removeCallbacks(updater)
+                  handler.post(updater)
+              }
+
+              override fun onPause() {
+                  super.onPause()
+
+                  handler.removeCallbacks(updater)
               }
           }
           EOF
 
-          cat > app/src/main/java/com/example/autoskip2/SkipAccessibilityService.kt <<'EOF'
-          package com.example.autoskip2
+          cat > app/src/main/java/com/example/autoskip3/SkipAccessibilityService.kt <<'EOF'
+          package com.example.autoskip3
 
           import android.accessibilityservice.AccessibilityService
           import android.accessibilityservice.GestureDescription
           import android.graphics.Path
           import android.graphics.Rect
-          import android.util.Log
           import android.view.accessibility.AccessibilityEvent
           import android.view.accessibility.AccessibilityNodeInfo
 
-          class SkipAccessibilityService : AccessibilityService() {
+          class SkipAccessibilityService :
+              AccessibilityService() {
 
               companion object {
-                  private const val TAG = "AutoSkip"
-                  private const val CHROME_PACKAGE = "com.android.chrome"
-                  private const val DEBOUNCE_MS = 1200L
+                  private const val CHROME_PACKAGE =
+                      "com.android.chrome"
+
+                  private const val DEBOUNCE_MS =
+                      1200L
+
+                  private const val MAX_TREE_LINES =
+                      80
               }
 
-              private var lastClickTime = 0L
+              private var lastClickTime =
+                  0L
 
-              private val skipTerms = listOf(
-                  "skip ad",
-                  "skip ads",
-                  "skip",
-                  "пропустить рекламу",
-                  "пропустить",
-                  "דלג על המודעה",
-                  "דלג"
-              )
+              private var lastDumpTime =
+                  0L
+
+              private val skipTerms =
+                  listOf(
+                      "skip ad",
+                      "skip ads",
+                      "skip",
+                      "пропустить рекламу",
+                      "пропустить",
+                      "דלג על המודעה",
+                      "דלג"
+                  )
 
               override fun onServiceConnected() {
                   super.onServiceConnected()
-                  Log.i(TAG, "Accessibility service connected")
+
+                  DiagnosticStore.lastAction =
+                      "Accessibility connected"
               }
 
-              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
+              override fun onAccessibilityEvent(
+                  event: AccessibilityEvent?
+              ) {
 
                   if (event == null) return
-                  if (event.packageName?.toString() != CHROME_PACKAGE) return
 
-                  val now = System.currentTimeMillis()
+                  val packageName =
+                      event.packageName
+                          ?.toString()
+                          .orEmpty()
 
-                  if (now - lastClickTime < DEBOUNCE_MS) return
+                  DiagnosticStore.lastPackage =
+                      packageName
 
-                  val root = rootInActiveWindow ?: return
-                  val node = findSkipNode(root) ?: return
+                  DiagnosticStore.lastEvent =
+                      AccessibilityEvent.eventTypeToString(
+                          event.eventType
+                      )
 
-                  if (clickNodeOrParent(node)) {
-                      lastClickTime = now
-                      Log.i(TAG, "Skip clicked with ACTION_CLICK")
+                  if (
+                      packageName != CHROME_PACKAGE
+                  ) {
                       return
                   }
 
-                  if (tapNode(node)) {
-                      lastClickTime = now
-                      Log.i(TAG, "Skip clicked with gesture")
+                  DiagnosticStore.eventCount++
+
+                  val root =
+                      rootInActiveWindow
+                          ?: return
+
+                  val now =
+                      System.currentTimeMillis()
+
+                  if (
+                      now - lastDumpTime > 1500
+                  ) {
+                      DiagnosticStore.lastTree =
+                          dumpTree(root)
+
+                      lastDumpTime =
+                          now
+                  }
+
+                  if (
+                      now - lastClickTime <
+                      DEBOUNCE_MS
+                  ) {
+                      return
+                  }
+
+                  val candidate =
+                      findSkipNode(root)
+
+                  if (
+                      candidate == null
+                  ) {
+                      DiagnosticStore.lastCandidate =
+                          "Not found"
+
+                      return
+                  }
+
+                  DiagnosticStore.lastCandidate =
+                      describeNode(candidate)
+
+                  if (
+                      clickNodeOrParent(
+                          candidate
+                      )
+                  ) {
+                      DiagnosticStore.lastAction =
+                          "ACTION_CLICK success"
+
+                      lastClickTime =
+                          now
+
+                      return
+                  }
+
+                  if (
+                      tapNode(candidate)
+                  ) {
+                      DiagnosticStore.lastAction =
+                          "Gesture dispatched"
+
+                      lastClickTime =
+                          now
+                  } else {
+                      DiagnosticStore.lastAction =
+                          "Candidate found, click failed"
                   }
               }
 
               private fun findSkipNode(
-                  node: AccessibilityNodeInfo
+                  node:
+                      AccessibilityNodeInfo
               ): AccessibilityNodeInfo? {
 
                   val text =
-                      node.text?.toString()?.trim()?.lowercase().orEmpty()
+                      node.text
+                          ?.toString()
+                          ?.trim()
+                          ?.lowercase()
+                          .orEmpty()
 
                   val description =
-                      node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
+                      node.contentDescription
+                          ?.toString()
+                          ?.trim()
+                          ?.lowercase()
+                          .orEmpty()
 
                   if (
                       node.isVisibleToUser &&
-                      (matchesSkip(text) || matchesSkip(description))
+                      (
+                          matchesSkip(text) ||
+                          matchesSkip(description)
+                      )
                   ) {
                       return node
                   }
 
-                  for (i in 0 until node.childCount) {
-                      val child = node.getChild(i) ?: continue
-                      val result = findSkipNode(child)
+                  for (
+                      i in 0 until
+                      node.childCount
+                  ) {
 
-                      if (result != null) {
+                      val child =
+                          node.getChild(i)
+                              ?: continue
+
+                      val result =
+                          findSkipNode(child)
+
+                      if (
+                          result != null
+                      ) {
                           return result
                       }
                   }
@@ -239,50 +436,83 @@ jobs:
                   return null
               }
 
-              private fun matchesSkip(value: String): Boolean {
+              private fun matchesSkip(
+                  value: String
+              ): Boolean {
 
-                  if (value.isBlank()) return false
+                  if (
+                      value.isBlank()
+                  ) {
+                      return false
+                  }
 
-                  return skipTerms.any { term ->
+                  return skipTerms.any {
+                      term ->
+
                       value == term ||
-                      value.startsWith("$term ")
+                      value.startsWith(
+                          "$term "
+                      ) ||
+                      value.contains(
+                          "$term>"
+                      ) ||
+                      value.contains(
+                          "$term,"
+                      )
                   }
               }
 
               private fun clickNodeOrParent(
-                  originalNode: AccessibilityNodeInfo
+                  originalNode:
+                      AccessibilityNodeInfo
               ): Boolean {
 
-                  var node: AccessibilityNodeInfo? = originalNode
+                  var node:
+                      AccessibilityNodeInfo? =
+                      originalNode
 
-                  repeat(6) {
-                      val current = node ?: return false
+                  repeat(8) {
+
+                      val current =
+                          node
+                              ?: return false
 
                       if (
                           current.isVisibleToUser &&
                           current.isClickable
                       ) {
-                          if (
+
+                          val clicked =
                               current.performAction(
-                                  AccessibilityNodeInfo.ACTION_CLICK
+                                  AccessibilityNodeInfo
+                                      .ACTION_CLICK
                               )
+
+                          if (
+                              clicked
                           ) {
                               return true
                           }
                       }
 
-                      node = current.parent
+                      node =
+                          current.parent
                   }
 
                   return false
               }
 
               private fun tapNode(
-                  node: AccessibilityNodeInfo
+                  node:
+                      AccessibilityNodeInfo
               ): Boolean {
 
-                  val rect = Rect()
-                  node.getBoundsInScreen(rect)
+                  val rect =
+                      Rect()
+
+                  node.getBoundsInScreen(
+                      rect
+                  )
 
                   if (
                       rect.width() <= 0 ||
@@ -291,21 +521,28 @@ jobs:
                       return false
                   }
 
-                  val path = Path().apply {
-                      moveTo(
-                          rect.centerX().toFloat(),
-                          rect.centerY().toFloat()
-                      )
-                  }
+                  val path =
+                      Path().apply {
+
+                          moveTo(
+                              rect.centerX()
+                                  .toFloat(),
+
+                              rect.centerY()
+                                  .toFloat()
+                          )
+                      }
 
                   val gesture =
-                      GestureDescription.Builder()
+                      GestureDescription
+                          .Builder()
                           .addStroke(
-                              GestureDescription.StrokeDescription(
-                                  path,
-                                  0,
-                                  80
-                              )
+                              GestureDescription
+                                  .StrokeDescription(
+                                      path,
+                                      0,
+                                      100
+                                  )
                           )
                           .build()
 
@@ -316,8 +553,134 @@ jobs:
                   )
               }
 
+              private fun dumpTree(
+                  root:
+                      AccessibilityNodeInfo
+              ): String {
+
+                  val lines =
+                      mutableListOf<String>()
+
+                  collectTree(
+                      root,
+                      lines,
+                      0
+                  )
+
+                  if (
+                      lines.isEmpty()
+                  ) {
+                      return "No visible text nodes"
+                  }
+
+                  return lines.joinToString(
+                      "\n"
+                  )
+              }
+
+              private fun collectTree(
+                  node:
+                      AccessibilityNodeInfo,
+                  lines:
+                      MutableList<String>,
+                  depth:
+                      Int
+              ) {
+
+                  if (
+                      lines.size >=
+                      MAX_TREE_LINES
+                  ) {
+                      return
+                  }
+
+                  if (
+                      node.isVisibleToUser
+                  ) {
+
+                      val text =
+                          node.text
+                              ?.toString()
+                              ?.trim()
+                              .orEmpty()
+
+                      val description =
+                          node.contentDescription
+                              ?.toString()
+                              ?.trim()
+                              .orEmpty()
+
+                      if (
+                          text.isNotBlank() ||
+                          description.isNotBlank()
+                      ) {
+
+                          val rect =
+                              Rect()
+
+                          node.getBoundsInScreen(
+                              rect
+                          )
+
+                          lines.add(
+                              "#${lines.size + 1} " +
+                              "text=\"$text\" " +
+                              "desc=\"$description\" " +
+                              "class=${node.className} " +
+                              "clickable=${node.isClickable} " +
+                              "bounds=$rect"
+                          )
+                      }
+                  }
+
+                  for (
+                      i in 0 until
+                      node.childCount
+                  ) {
+
+                      val child =
+                          node.getChild(i)
+                              ?: continue
+
+                      collectTree(
+                          child,
+                          lines,
+                          depth + 1
+                      )
+
+                      if (
+                          lines.size >=
+                          MAX_TREE_LINES
+                      ) {
+                          return
+                      }
+                  }
+              }
+
+              private fun describeNode(
+                  node:
+                      AccessibilityNodeInfo
+              ): String {
+
+                  val rect =
+                      Rect()
+
+                  node.getBoundsInScreen(
+                      rect
+                  )
+
+                  return """
+                      text=${node.text}
+                      desc=${node.contentDescription}
+                      class=${node.className}
+                      clickable=${node.isClickable}
+                      bounds=$rect
+                  """.trimIndent()
+              }
+
               override fun onInterrupt() {
-                  Log.i(TAG, "Accessibility service interrupted")
+                  DiagnosticStore.lastAction =
+                      "Accessibility interrupted"
               }
           }
           EOF
@@ -326,9 +689,9 @@ jobs:
           <?xml version="1.0" encoding="utf-8"?>
           <accessibility-service
               xmlns:android="http://schemas.android.com/apk/res/android"
-              android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewClicked"
+              android:accessibilityEventTypes="typeAllMask"
               android:accessibilityFeedbackType="feedbackGeneric"
-              android:notificationTimeout="100"
+              android:notificationTimeout="50"
               android:canRetrieveWindowContent="true"
               android:canPerformGestures="true"
               android:packageNames="com.android.chrome"
@@ -338,7 +701,10 @@ jobs:
           cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources>
               <string name="app_name">AutoSkip</string>
-              <string name="accessibility_description">Automatically presses YouTube Skip Ad in Chrome.</string>
+
+              <string name="accessibility_description">
+                  AutoSkip diagnostic accessibility service for Chrome.
+              </string>
           </resources>
           EOF
 
@@ -367,7 +733,9 @@ jobs:
           }
 
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositoriesMode.set(
+                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
+              )
 
               repositories {
                   google()
@@ -375,7 +743,9 @@ jobs:
               }
           }
 
-          rootProject.name = "AutoSkip"
+          rootProject.name =
+              "AutoSkip"
+
           include(":app")
           EOF
 
@@ -411,6 +781,6 @@ jobs:
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: AutoSkip-0.2-debug-apk
+          name: AutoSkip-0.3-diagnostic-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
