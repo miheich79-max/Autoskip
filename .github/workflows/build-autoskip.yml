@@ -23,9 +23,6 @@ jobs:
           mkdir -p app/src/main/res/xml
           mkdir -p app/src/main/res/values
 
-          # -------------------------------------------------
-          # app/build.gradle.kts
-          # -------------------------------------------------
           cat > app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
@@ -43,6 +40,15 @@ jobs:
                   versionCode = 1
                   versionName = "0.1"
               }
+
+              compileOptions {
+                  sourceCompatibility = JavaVersion.VERSION_17
+                  targetCompatibility = JavaVersion.VERSION_17
+              }
+
+              kotlinOptions {
+                  jvmTarget = "17"
+              }
           }
 
           dependencies {
@@ -51,9 +57,6 @@ jobs:
           }
           EOF
 
-          # -------------------------------------------------
-          # AndroidManifest.xml
-          # -------------------------------------------------
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -95,9 +98,6 @@ jobs:
           </manifest>
           EOF
 
-          # -------------------------------------------------
-          # MainActivity.kt
-          # -------------------------------------------------
           cat > app/src/main/java/com/example/autoskip/MainActivity.kt <<'EOF'
           package com.example.autoskip
 
@@ -149,9 +149,6 @@ jobs:
           }
           EOF
 
-          # -------------------------------------------------
-          # SkipAccessibilityService.kt
-          # -------------------------------------------------
           cat > app/src/main/java/com/example/autoskip/SkipAccessibilityService.kt <<'EOF'
           package com.example.autoskip
 
@@ -270,7 +267,6 @@ jobs:
                   if (value.isBlank()) return false
 
                   return skipTerms.any { term ->
-
                       value == term ||
                       value.startsWith("$term ")
                   }
@@ -377,9 +373,6 @@ jobs:
           }
           EOF
 
-          # -------------------------------------------------
-          # Accessibility configuration
-          # -------------------------------------------------
           cat > app/src/main/res/xml/accessibility_service_config.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
 
@@ -394,9 +387,6 @@ jobs:
               android:description="@string/accessibility_description" />
           EOF
 
-          # -------------------------------------------------
-          # Strings
-          # -------------------------------------------------
           cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources>
               <string name="app_name">AutoSkip</string>
@@ -404,9 +394,6 @@ jobs:
           </resources>
           EOF
 
-          # -------------------------------------------------
-          # Theme
-          # -------------------------------------------------
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <resources>
               <style
@@ -415,9 +402,6 @@ jobs:
           </resources>
           EOF
 
-          # -------------------------------------------------
-          # Root build.gradle.kts
-          # -------------------------------------------------
           cat > build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application") version "8.7.3" apply false
@@ -425,9 +409,6 @@ jobs:
           }
           EOF
 
-          # -------------------------------------------------
-          # settings.gradle.kts
-          # -------------------------------------------------
           cat > settings.gradle.kts <<'EOF'
           pluginManagement {
               repositories {
@@ -452,9 +433,6 @@ jobs:
           include(":app")
           EOF
 
-          # -------------------------------------------------
-          # gradle.properties
-          # -------------------------------------------------
           cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
