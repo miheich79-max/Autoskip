@@ -253,7 +253,6 @@ jobs:
               android:canRetrieveWindowContent="true"
               android:canPerformGestures="true"
               android:reportViewIds="true"
-              android:packageNames="com.android.chrome"
               android:description="@string/accessibility_description" />
           EOF
 
