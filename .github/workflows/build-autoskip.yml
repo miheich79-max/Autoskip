@@ -17,7 +17,7 @@ jobs:
       - name: Create Android project
         shell: bash
         run: |
-          set -euo pipefail
+          set -e
 
           mkdir -p app/src/main/java/com/example/autoskip2
           mkdir -p app/src/main/res/xml
@@ -183,58 +183,30 @@ jobs:
 
               override fun onServiceConnected() {
                   super.onServiceConnected()
-                  Log.i(TAG, "AutoSkip accessibility service connected")
+                  Log.i(TAG, "Accessibility service connected")
               }
 
-              override fun onAccessibilityEvent(
-                  event: AccessibilityEvent?
-              ) {
+              override fun onAccessibilityEvent(event: AccessibilityEvent?) {
 
                   if (event == null) return
-
-                  if (
-                      event.packageName?.toString() != CHROME_PACKAGE
-                  ) {
-                      return
-                  }
+                  if (event.packageName?.toString() != CHROME_PACKAGE) return
 
                   val now = System.currentTimeMillis()
 
-                  if (
-                      now - lastClickTime < DEBOUNCE_MS
-                  ) {
+                  if (now - lastClickTime < DEBOUNCE_MS) return
+
+                  val root = rootInActiveWindow ?: return
+                  val node = findSkipNode(root) ?: return
+
+                  if (clickNodeOrParent(node)) {
+                      lastClickTime = now
+                      Log.i(TAG, "Skip clicked with ACTION_CLICK")
                       return
                   }
 
-                  val root =
-                      rootInActiveWindow ?: return
-
-                  val skipNode =
-                      findSkipNode(root) ?: return
-
-                  if (
-                      clickNodeOrParent(skipNode)
-                  ) {
-
-                      Log.i(
-                          TAG,
-                          "Skip clicked using ACTION_CLICK"
-                      )
-
+                  if (tapNode(node)) {
                       lastClickTime = now
-                      return
-                  }
-
-                  if (
-                      tapNode(skipNode)
-                  ) {
-
-                      Log.i(
-                          TAG,
-                          "Skip clicked using gesture"
-                      )
-
-                      lastClickTime = now
+                      Log.i(TAG, "Skip clicked with gesture")
                   }
               }
 
@@ -243,43 +215,23 @@ jobs:
               ): AccessibilityNodeInfo? {
 
                   val text =
-                      node.text
-                          ?.toString()
-                          ?.trim()
-                          ?.lowercase()
-                          .orEmpty()
+                      node.text?.toString()?.trim()?.lowercase().orEmpty()
 
                   val description =
-                      node.contentDescription
-                          ?.toString()
-                          ?.trim()
-                          ?.lowercase()
-                          .orEmpty()
+                      node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
 
                   if (
                       node.isVisibleToUser &&
-                      (
-                          matchesSkip(text) ||
-                          matchesSkip(description)
-                      )
+                      (matchesSkip(text) || matchesSkip(description))
                   ) {
                       return node
                   }
 
-                  for (
-                      i in 0 until node.childCount
-                  ) {
+                  for (i in 0 until node.childCount) {
+                      val child = node.getChild(i) ?: continue
+                      val result = findSkipNode(child)
 
-                      val child =
-                          node.getChild(i)
-                              ?: continue
-
-                      val result =
-                          findSkipNode(child)
-
-                      if (
-                          result != null
-                      ) {
+                      if (result != null) {
                           return result
                       }
                   }
@@ -287,45 +239,29 @@ jobs:
                   return null
               }
 
-              private fun matchesSkip(
-                  value: String
-              ): Boolean {
+              private fun matchesSkip(value: String): Boolean {
 
-                  if (
-                      value.isBlank()
-                  ) {
-                      return false
-                  }
+                  if (value.isBlank()) return false
 
-                  return skipTerms.any {
-                      term ->
-
+                  return skipTerms.any { term ->
                       value == term ||
-                      value.startsWith(
-                          "$term "
-                      )
+                      value.startsWith("$term ")
                   }
               }
 
               private fun clickNodeOrParent(
-                  originalNode:
-                      AccessibilityNodeInfo
+                  originalNode: AccessibilityNodeInfo
               ): Boolean {
 
-                  var node:
-                      AccessibilityNodeInfo? =
-                      originalNode
+                  var node: AccessibilityNodeInfo? = originalNode
 
                   repeat(6) {
-
-                      val current =
-                          node ?: return false
+                      val current = node ?: return false
 
                       if (
                           current.isVisibleToUser &&
                           current.isClickable
                       ) {
-
                           if (
                               current.performAction(
                                   AccessibilityNodeInfo.ACTION_CLICK
@@ -335,23 +271,18 @@ jobs:
                           }
                       }
 
-                      node =
-                          current.parent
+                      node = current.parent
                   }
 
                   return false
               }
 
               private fun tapNode(
-                  node:
-                      AccessibilityNodeInfo
+                  node: AccessibilityNodeInfo
               ): Boolean {
 
                   val rect = Rect()
-
-                  node.getBoundsInScreen(
-                      rect
-                  )
+                  node.getBoundsInScreen(rect)
 
                   if (
                       rect.width() <= 0 ||
@@ -360,28 +291,21 @@ jobs:
                       return false
                   }
 
-                  val path =
-                      Path().apply {
-
-                          moveTo(
-                              rect.centerX()
-                                  .toFloat(),
-
-                              rect.centerY()
-                                  .toFloat()
-                          )
-                      }
+                  val path = Path().apply {
+                      moveTo(
+                          rect.centerX().toFloat(),
+                          rect.centerY().toFloat()
+                      )
+                  }
 
                   val gesture =
-                      GestureDescription
-                          .Builder()
+                      GestureDescription.Builder()
                           .addStroke(
-                              GestureDescription
-                                  .StrokeDescription(
-                                      path,
-                                      0,
-                                      80
-                                  )
+                              GestureDescription.StrokeDescription(
+                                  path,
+                                  0,
+                                  80
+                              )
                           )
                           .build()
 
@@ -393,18 +317,13 @@ jobs:
               }
 
               override fun onInterrupt() {
-
-                  Log.i(
-                      TAG,
-                      "Accessibility service interrupted"
-                  )
+                  Log.i(TAG, "Accessibility service interrupted")
               }
           }
           EOF
 
           cat > app/src/main/res/xml/accessibility_service_config.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
-
           <accessibility-service
               xmlns:android="http://schemas.android.com/apk/res/android"
               android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewClicked"
@@ -414,30 +333,20 @@ jobs:
               android:canPerformGestures="true"
               android:packageNames="com.android.chrome"
               android:description="@string/accessibility_description" />
-
           EOF
 
           cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources>
-
-              <string name="app_name">
-                  AutoSkip
-              </string>
-
-              <string name="accessibility_description">
-                  Automatically presses the YouTube Skip Ad button in Chrome.
-              </string>
-
+              <string name="app_name">AutoSkip</string>
+              <string name="accessibility_description">Automatically presses YouTube Skip Ad in Chrome.</string>
           </resources>
           EOF
 
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <resources>
-
               <style
                   name="AppTheme"
                   parent="Theme.AppCompat.Light.DarkActionBar" />
-
           </resources>
           EOF
 
@@ -458,10 +367,7 @@ jobs:
           }
 
           dependencyResolutionManagement {
-
-              repositoriesMode.set(
-                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
-              )
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
 
               repositories {
                   google()
@@ -469,9 +375,7 @@ jobs:
               }
           }
 
-          rootProject.name =
-              "AutoSkip"
-
+          rootProject.name = "AutoSkip"
           include(":app")
           EOF
 
@@ -481,7 +385,7 @@ jobs:
           kotlin.code.style=official
           EOF
 
-      - name: Set up Java
+      - name: Set up Java 17
         uses: actions/setup-java@v5
         with:
           distribution: temurin
@@ -491,20 +395,22 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK 35
-        run: |
-          sdkmanager \
-            "platforms;android-35" \
-            "build-tools;35.0.0"
+        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
-      - name: Set up Gradle
+      - name: Set up Gradle 8.9
         uses: gradle/actions/setup-gradle@v4
         with:
           gradle-version: '8.9'
 
       - name: Build APK
-        run: |
-          gradle \
-            --no-daemon \
-            :app:assembleDebug
+        run: gradle --no-daemon :app:assembleDebug
 
-      - name:
+      - name: Verify APK
+        run: "${ANDROID_HOME}/build-tools/35.0.0/apksigner verify --verbose app/build/outputs/apk/debug/app-debug.apk"
+
+      - name: Upload APK
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSkip-0.2-debug-apk
+          path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
