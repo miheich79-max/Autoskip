@@ -3,7 +3,8 @@ name: Build AutoSkip APK
 on:
   workflow_dispatch:
   push:
-    branches: [ main ]
+    branches:
+      - main
 
 permissions:
   contents: read
@@ -13,7 +14,7 @@ jobs:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Recreate Android project
+      - name: Create Android project
         shell: bash
         run: |
           set -euo pipefail
@@ -22,6 +23,9 @@ jobs:
           mkdir -p app/src/main/res/xml
           mkdir -p app/src/main/res/values
 
+          # -------------------------------------------------
+          # app/build.gradle.kts
+          # -------------------------------------------------
           cat > app/build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application")
@@ -47,6 +51,9 @@ jobs:
           }
           EOF
 
+          # -------------------------------------------------
+          # AndroidManifest.xml
+          # -------------------------------------------------
           cat > app/src/main/AndroidManifest.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
           <manifest xmlns:android="http://schemas.android.com/apk/res/android">
@@ -60,16 +67,19 @@ jobs:
                   <activity
                       android:name=".MainActivity"
                       android:exported="true">
+
                       <intent-filter>
                           <action android:name="android.intent.action.MAIN" />
                           <category android:name="android.intent.category.LAUNCHER" />
                       </intent-filter>
+
                   </activity>
 
                   <service
                       android:name=".SkipAccessibilityService"
                       android:permission="android.permission.BIND_ACCESSIBILITY_SERVICE"
-                      android:exported="false">
+                      android:exported="true">
+
                       <intent-filter>
                           <action android:name="android.accessibilityservice.AccessibilityService" />
                       </intent-filter>
@@ -77,12 +87,17 @@ jobs:
                       <meta-data
                           android:name="android.accessibilityservice"
                           android:resource="@xml/accessibility_service_config" />
+
                   </service>
 
               </application>
+
           </manifest>
           EOF
 
+          # -------------------------------------------------
+          # MainActivity.kt
+          # -------------------------------------------------
           cat > app/src/main/java/com/example/autoskip/MainActivity.kt <<'EOF'
           package com.example.autoskip
 
@@ -95,6 +110,7 @@ jobs:
           import androidx.appcompat.app.AppCompatActivity
 
           class MainActivity : AppCompatActivity() {
+
               override fun onCreate(savedInstanceState: Bundle?) {
                   super.onCreate(savedInstanceState)
 
@@ -104,17 +120,21 @@ jobs:
 
                           1. Open Accessibility Settings
                           2. Enable AutoSkip
-                          3. Open youtube.com in Chrome
-                          4. AutoSkip will try to press Skip
+                          3. Open YouTube in Chrome
+                          4. AutoSkip will press Skip when available
                       """.trimIndent()
+
                       textSize = 18f
                       setPadding(40, 60, 40, 30)
                   }
 
                   val button = Button(this).apply {
                       text = "Open Accessibility Settings"
+
                       setOnClickListener {
-                          startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+                          startActivity(
+                              Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)
+                          )
                       }
                   }
 
@@ -129,6 +149,9 @@ jobs:
           }
           EOF
 
+          # -------------------------------------------------
+          # SkipAccessibilityService.kt
+          # -------------------------------------------------
           cat > app/src/main/java/com/example/autoskip/SkipAccessibilityService.kt <<'EOF'
           package com.example.autoskip
 
@@ -142,72 +165,137 @@ jobs:
 
           class SkipAccessibilityService : AccessibilityService() {
 
+              companion object {
+                  private const val TAG = "AutoSkip"
+                  private const val CHROME_PACKAGE = "com.android.chrome"
+                  private const val DEBOUNCE_MS = 1200L
+              }
+
               private var lastClickTime = 0L
 
-              private val terms = setOf(
-                  "skip",
+              private val skipTerms = listOf(
                   "skip ad",
                   "skip ads",
-                  "пропустить",
+                  "skip",
                   "пропустить рекламу",
-                  "דלג",
-                  "דלג על המודעה"
+                  "пропустить",
+                  "דלג על המודעה",
+                  "דלג"
               )
 
+              override fun onServiceConnected() {
+                  super.onServiceConnected()
+                  Log.i(TAG, "AutoSkip accessibility service connected")
+              }
+
               override fun onAccessibilityEvent(event: AccessibilityEvent?) {
-                  if (event?.packageName?.toString() != "com.android.chrome") return
+
+                  if (event == null) return
+
+                  val packageName =
+                      event.packageName?.toString() ?: return
+
+                  if (packageName != CHROME_PACKAGE) return
 
                   val now = System.currentTimeMillis()
-                  if (now - lastClickTime < 1200) return
+
+                  if (now - lastClickTime < DEBOUNCE_MS) {
+                      return
+                  }
 
                   val root = rootInActiveWindow ?: return
-                  val node = findSkip(root) ?: return
 
-                  if (clickNodeOrParent(node) || tapNode(node)) {
+                  val skipNode = findSkipNode(root) ?: return
+
+                  logNode(skipNode)
+
+                  if (clickNodeOrParent(skipNode)) {
+
+                      Log.i(TAG, "Skip clicked using ACTION_CLICK")
+                      lastClickTime = now
+                      return
+                  }
+
+                  if (tapNode(skipNode)) {
+
+                      Log.i(TAG, "Skip clicked using gesture")
                       lastClickTime = now
                   }
               }
 
-              private fun findSkip(node: AccessibilityNodeInfo): AccessibilityNodeInfo? {
-                  val text = node.text?.toString()?.trim()?.lowercase().orEmpty()
-                  val desc = node.contentDescription?.toString()?.trim()?.lowercase().orEmpty()
+              private fun findSkipNode(
+                  node: AccessibilityNodeInfo
+              ): AccessibilityNodeInfo? {
+
+                  val text =
+                      node.text
+                          ?.toString()
+                          ?.trim()
+                          ?.lowercase()
+                          .orEmpty()
+
+                  val description =
+                      node.contentDescription
+                          ?.toString()
+                          ?.trim()
+                          ?.lowercase()
+                          .orEmpty()
 
                   if (
                       node.isVisibleToUser &&
-                      (matches(text) || matches(desc))
+                      (
+                          matchesSkip(text) ||
+                          matchesSkip(description)
+                      )
                   ) {
-                      Log.i("AutoSkip", "Skip found: text=$text desc=$desc")
                       return node
                   }
 
                   for (i in 0 until node.childCount) {
+
                       val child = node.getChild(i) ?: continue
-                      val result = findSkip(child)
-                      if (result != null) return result
+
+                      val result = findSkipNode(child)
+
+                      if (result != null) {
+                          return result
+                      }
                   }
 
                   return null
               }
 
-              private fun matches(value: String): Boolean {
-                  if (value in terms) return true
+              private fun matchesSkip(value: String): Boolean {
 
-                  return terms.any {
-                      value.startsWith("$it ")
+                  if (value.isBlank()) return false
+
+                  return skipTerms.any { term ->
+
+                      value == term ||
+                      value.startsWith("$term ")
                   }
               }
 
-              private fun clickNodeOrParent(original: AccessibilityNodeInfo): Boolean {
-                  var node: AccessibilityNodeInfo? = original
+              private fun clickNodeOrParent(
+                  originalNode: AccessibilityNodeInfo
+              ): Boolean {
+
+                  var node: AccessibilityNodeInfo? = originalNode
 
                   repeat(6) {
+
                       val current = node ?: return false
 
-                      if (
-                          current.isClickable &&
-                          current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-                      ) {
-                          return true
+                      if (current.isClickable) {
+
+                          val result =
+                              current.performAction(
+                                  AccessibilityNodeInfo.ACTION_CLICK
+                              )
+
+                          if (result) {
+                              return true
+                          }
                       }
 
                       node = current.parent
@@ -216,35 +304,85 @@ jobs:
                   return false
               }
 
-              private fun tapNode(node: AccessibilityNodeInfo): Boolean {
+              private fun tapNode(
+                  node: AccessibilityNodeInfo
+              ): Boolean {
+
+                  val rect = Rect()
+
+                  node.getBoundsInScreen(rect)
+
+                  if (
+                      rect.width() <= 0 ||
+                      rect.height() <= 0
+                  ) {
+                      return false
+                  }
+
+                  val x = rect.centerX().toFloat()
+                  val y = rect.centerY().toFloat()
+
+                  val path = Path().apply {
+                      moveTo(x, y)
+                  }
+
+                  val gesture =
+                      GestureDescription.Builder()
+                          .addStroke(
+                              GestureDescription.StrokeDescription(
+                                  path,
+                                  0,
+                                  80
+                              )
+                          )
+                          .build()
+
+                  Log.i(
+                      TAG,
+                      "Trying gesture tap at x=$x y=$y"
+                  )
+
+                  return dispatchGesture(
+                      gesture,
+                      null,
+                      null
+                  )
+              }
+
+              private fun logNode(
+                  node: AccessibilityNodeInfo
+              ) {
+
                   val rect = Rect()
                   node.getBoundsInScreen(rect)
 
-                  if (rect.width() <= 0 || rect.height() <= 0) return false
-
-                  val path = Path().apply {
-                      moveTo(rect.centerX().toFloat(), rect.centerY().toFloat())
-                  }
-
-                  val gesture = GestureDescription.Builder()
-                      .addStroke(
-                          GestureDescription.StrokeDescription(
-                              path,
-                              0,
-                              80
-                          )
-                      )
-                      .build()
-
-                  return dispatchGesture(gesture, null, null)
+                  Log.i(
+                      TAG,
+                      """
+                      Skip candidate:
+                      text=${node.text}
+                      description=${node.contentDescription}
+                      class=${node.className}
+                      clickable=${node.isClickable}
+                      visible=${node.isVisibleToUser}
+                      viewId=${node.viewIdResourceName}
+                      bounds=$rect
+                      """.trimIndent()
+                  )
               }
 
-              override fun onInterrupt() {}
+              override fun onInterrupt() {
+                  Log.i(TAG, "Accessibility service interrupted")
+              }
           }
           EOF
 
+          # -------------------------------------------------
+          # Accessibility configuration
+          # -------------------------------------------------
           cat > app/src/main/res/xml/accessibility_service_config.xml <<'EOF'
           <?xml version="1.0" encoding="utf-8"?>
+
           <accessibility-service
               xmlns:android="http://schemas.android.com/apk/res/android"
               android:accessibilityEventTypes="typeWindowContentChanged|typeWindowStateChanged|typeViewClicked"
@@ -252,23 +390,34 @@ jobs:
               android:notificationTimeout="100"
               android:canRetrieveWindowContent="true"
               android:canPerformGestures="true"
-              android:reportViewIds="true"
+              android:packageNames="com.android.chrome"
               android:description="@string/accessibility_description" />
           EOF
 
+          # -------------------------------------------------
+          # Strings
+          # -------------------------------------------------
           cat > app/src/main/res/values/strings.xml <<'EOF'
           <resources>
               <string name="app_name">AutoSkip</string>
-              <string name="accessibility_description">Automatically presses YouTube Skip Ad in Chrome.</string>
+              <string name="accessibility_description">Automatically presses the YouTube Skip Ad button in Chrome.</string>
           </resources>
           EOF
 
+          # -------------------------------------------------
+          # Theme
+          # -------------------------------------------------
           cat > app/src/main/res/values/styles.xml <<'EOF'
           <resources>
-              <style name="AppTheme" parent="Theme.AppCompat.Light.DarkActionBar" />
+              <style
+                  name="AppTheme"
+                  parent="Theme.AppCompat.Light.DarkActionBar" />
           </resources>
           EOF
 
+          # -------------------------------------------------
+          # Root build.gradle.kts
+          # -------------------------------------------------
           cat > build.gradle.kts <<'EOF'
           plugins {
               id("com.android.application") version "8.7.3" apply false
@@ -276,6 +425,9 @@ jobs:
           }
           EOF
 
+          # -------------------------------------------------
+          # settings.gradle.kts
+          # -------------------------------------------------
           cat > settings.gradle.kts <<'EOF'
           pluginManagement {
               repositories {
@@ -286,7 +438,10 @@ jobs:
           }
 
           dependencyResolutionManagement {
-              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositoriesMode.set(
+                  RepositoriesMode.FAIL_ON_PROJECT_REPOS
+              )
+
               repositories {
                   google()
                   mavenCentral()
@@ -297,14 +452,17 @@ jobs:
           include(":app")
           EOF
 
+          # -------------------------------------------------
+          # gradle.properties
+          # -------------------------------------------------
           cat > gradle.properties <<'EOF'
           org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
           android.useAndroidX=true
           kotlin.code.style=official
           EOF
 
-      - name: Set up Java 17
-        uses: actions/setup-java@v4
+      - name: Set up Java
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
@@ -313,7 +471,8 @@ jobs:
         uses: android-actions/setup-android@v3
 
       - name: Install Android SDK 35
-        run: sdkmanager "platforms;android-35" "build-tools;35.0.0"
+        run: |
+          sdkmanager "platforms;android-35" "build-tools;35.0.0"
 
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v4
@@ -321,10 +480,12 @@ jobs:
           gradle-version: '8.9'
 
       - name: Build APK
-        run: gradle --no-daemon :app:assembleDebug
+        run: |
+          gradle --no-daemon :app:assembleDebug
 
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
           name: AutoSkip-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
+          if-no-files-found: error
