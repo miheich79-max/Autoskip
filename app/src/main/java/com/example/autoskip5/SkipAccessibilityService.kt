@@ -244,9 +244,9 @@ class SkipAccessibilityService : AccessibilityService() {
 
     private fun describeNode(node: AccessibilityNodeInfo): String {
         val bounds = Rect().also(node::getBoundsInScreen)
-        return "text=\"${node.text.orEmpty()}\" " +
-            "contentDescription=\"${node.contentDescription.orEmpty()}\" " +
-            "className=${node.className.orEmpty()} " +
+        return "text=\"${node.text?.toString().orEmpty()}\" " +
+            "contentDescription=\"${node.contentDescription?.toString().orEmpty()}\" " +
+            "className=${node.className?.toString().orEmpty()} " +
             "clickable=${node.isClickable} " +
             "viewIdResourceName=${node.viewIdResourceName.orEmpty()} " +
             "bounds=$bounds"
@@ -263,4 +263,3 @@ class SkipAccessibilityService : AccessibilityService() {
         Log.w(TAG, "Accessibility service interrupted")
     }
 }
-
