@@ -7,6 +7,7 @@ import android.graphics.Rect
 import android.os.SystemClock
 import android.view.accessibility.AccessibilityEvent
 import android.view.accessibility.AccessibilityNodeInfo
+import java.util.ArrayDeque
 import java.util.Locale
 
 class SkipAccessibilityService : AccessibilityService() {
@@ -14,7 +15,6 @@ class SkipAccessibilityService : AccessibilityService() {
         private const val CHROME_PACKAGE = "com.android.chrome"
         private const val DEBOUNCE_MS = 1_200L
         private const val MAX_PARENT_DEPTH = 10
-        private const val MAX_TREE_DEPTH = 80
     }
 
     private val skipTerms = listOf(
@@ -62,18 +62,20 @@ class SkipAccessibilityService : AccessibilityService() {
         return true
     }
 
-    private fun findSkipNode(node: AccessibilityNodeInfo, depth: Int = 0): AccessibilityNodeInfo? {
-        if (depth > MAX_TREE_DEPTH) return null
+    private fun findSkipNode(root: AccessibilityNodeInfo): AccessibilityNodeInfo? {
+        val queue = ArrayDeque<AccessibilityNodeInfo>()
+        queue.add(root)
 
-        if (node.isVisibleToUser) {
-            val text = normalize(node.text)
-            val description = normalize(node.contentDescription)
-            if (matchesSkip(text) || matchesSkip(description)) return node
-        }
-
-        for (index in 0 until node.childCount) {
-            val child = node.getChild(index) ?: continue
-            findSkipNode(child, depth + 1)?.let { return it }
+        while (queue.isNotEmpty()) {
+            val node = queue.removeFirst()
+            if (node.isVisibleToUser) {
+                val text = normalize(node.text)
+                val description = normalize(node.contentDescription)
+                if (matchesSkip(text) || matchesSkip(description)) return node
+            }
+            for (index in 0 until node.childCount) {
+                node.getChild(index)?.let(queue::addLast)
+            }
         }
         return null
     }
@@ -96,17 +98,11 @@ class SkipAccessibilityService : AccessibilityService() {
     private fun clickNodeOrParent(candidate: AccessibilityNodeInfo): Boolean {
         if (candidate.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
 
-        var parent = candidate.parent
+        var node = candidate.parent
         repeat(MAX_PARENT_DEPTH) {
-            val current = parent ?: return false
-            if (
-                current.isVisibleToUser &&
-                current.isClickable &&
-                current.performAction(AccessibilityNodeInfo.ACTION_CLICK)
-            ) {
-                return true
-            }
-            parent = current.parent
+            val current = node ?: return false
+            if (current.performAction(AccessibilityNodeInfo.ACTION_CLICK)) return true
+            node = current.parent
         }
         return false
     }

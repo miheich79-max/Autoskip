@@ -19,7 +19,7 @@ class MainActivity : Activity() {
 
         val padding = (24 * resources.displayMetrics.density).toInt()
         val title = TextView(this).apply {
-            text = "AutoSkip 1.0"
+            text = "AutoSkip 1.0.1"
             textSize = 26f
         }
         statusView = TextView(this).apply {
@@ -70,4 +70,3 @@ class MainActivity : Activity() {
             }
     }
 }
-
