@@ -1,5 +1,4 @@
 <resources>
     <string name="app_name">AutoSkip</string>
-    <string name="accessibility_description">Automatically press visible, skippable YouTube ad buttons in Chrome.</string>
+    <string name="accessibility_description">Press visible, skippable YouTube ad buttons in Chrome.</string>
 </resources>
-

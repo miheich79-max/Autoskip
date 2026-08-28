@@ -1,71 +1,73 @@
 package com.example.autoskip5
 
+import android.accessibilityservice.AccessibilityServiceInfo
+import android.app.Activity
+import android.content.Context
 import android.content.Intent
-import android.graphics.Typeface
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.provider.Settings
+import android.view.accessibility.AccessibilityManager
 import android.widget.Button
 import android.widget.LinearLayout
-import android.widget.ScrollView
 import android.widget.TextView
-import androidx.appcompat.app.AppCompatActivity
 
-class MainActivity : AppCompatActivity() {
-    private lateinit var diagnosticsView: TextView
-    private val handler = Handler(Looper.getMainLooper())
-
-    private val updater = object : Runnable {
-        override fun run() {
-            diagnosticsView.text = DiagnosticStore.report(this@MainActivity)
-            handler.postDelayed(this, 750L)
-        }
-    }
+class MainActivity : Activity() {
+    private lateinit var statusView: TextView
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
 
+        val padding = (24 * resources.displayMetrics.density).toInt()
         val title = TextView(this).apply {
-            text = "AutoSkip 0.6"
-            textSize = 22f
-            setPadding(30, 30, 30, 12)
+            text = "AutoSkip 1.0"
+            textSize = 26f
         }
-        val explanation = TextView(this).apply {
-            text = "Open Accessibility Settings to enable AutoSkip. Diagnostics below are preserved when you leave Chrome and return here."
-            textSize = 15f
-            setPadding(30, 0, 30, 16)
+        statusView = TextView(this).apply {
+            textSize = 16f
+            setPadding(0, padding / 2, 0, padding)
         }
-        val accessibilityButton = Button(this).apply {
+        val instructions = TextView(this).apply {
+            text = "Enable AutoSkip in Accessibility Settings. It runs only when Chrome sends accessibility events; this screen does not need to remain open."
+            textSize = 16f
+            setPadding(0, 0, 0, padding)
+        }
+        val settingsButton = Button(this).apply {
             text = "Open Accessibility Settings"
-            setOnClickListener { startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS)) }
-        }
-        diagnosticsView = TextView(this).apply {
-            typeface = Typeface.MONOSPACE
-            textSize = 12f
-            setTextIsSelectable(true)
-            setPadding(30, 20, 30, 40)
+            setOnClickListener {
+                startActivity(Intent(Settings.ACTION_ACCESSIBILITY_SETTINGS))
+            }
         }
 
-        val container = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            addView(title)
-            addView(explanation)
-            addView(accessibilityButton)
-            addView(diagnosticsView)
-        }
-        setContentView(ScrollView(this).apply { addView(container) })
+        setContentView(
+            LinearLayout(this).apply {
+                orientation = LinearLayout.VERTICAL
+                setPadding(padding, padding, padding, padding)
+                addView(title)
+                addView(statusView)
+                addView(instructions)
+                addView(settingsButton)
+            },
+        )
     }
 
     override fun onResume() {
         super.onResume()
-        handler.removeCallbacks(updater)
-        handler.post(updater)
+        statusView.text = if (isServiceEnabled()) {
+            "Status: enabled"
+        } else {
+            "Status: not enabled"
+        }
     }
 
-    override fun onPause() {
-        handler.removeCallbacks(updater)
-        super.onPause()
+    private fun isServiceEnabled(): Boolean {
+        val manager = getSystemService(Context.ACCESSIBILITY_SERVICE) as AccessibilityManager
+        return manager
+            .getEnabledAccessibilityServiceList(AccessibilityServiceInfo.FEEDBACK_ALL_MASK)
+            .any { service ->
+                val info = service.resolveInfo.serviceInfo
+                info.packageName == packageName &&
+                    info.name == SkipAccessibilityService::class.java.name
+            }
     }
 }
 

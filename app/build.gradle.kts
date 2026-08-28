@@ -8,12 +8,12 @@ android {
     compileSdk = 35
 
     defaultConfig {
-        // Keep this stable: version 0.5 used this ID, so 0.6 installs as an update.
+        // This ID is shared with the working diagnostic build and must remain stable.
         applicationId = "com.example.autoskip5"
         minSdk = 24
         targetSdk = 35
-        versionCode = 6
-        versionName = "0.6"
+        versionCode = 7
+        versionName = "1.0"
     }
 
     compileOptions {
@@ -25,9 +25,3 @@ android {
         jvmTarget = "17"
     }
 }
-
-dependencies {
-    implementation("androidx.core:core-ktx:1.15.0")
-    implementation("androidx.appcompat:appcompat:1.7.0")
-}
-
