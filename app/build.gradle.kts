@@ -12,8 +12,8 @@ android {
         applicationId = "com.example.autoskip5"
         minSdk = 24
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.0.1"
+        versionCode = 9
+        versionName = "1.1"
     }
 
     compileOptions {
