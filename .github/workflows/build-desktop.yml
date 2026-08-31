@@ -1,0 +1,59 @@
+name: Build AutoSkip Desktop
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - 'desktop/**'
+      - '.github/workflows/build-desktop.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  build-test-package:
+    runs-on: windows-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up .NET 8
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '8.0.x'
+
+      - name: Restore tests
+        run: dotnet restore desktop/AutoSkip.Core.Tests/AutoSkip.Core.Tests.csproj
+
+      - name: Run core tests
+        run: dotnet test desktop/AutoSkip.Core.Tests/AutoSkip.Core.Tests.csproj --configuration Release --no-restore --logger "trx;LogFileName=autoskip-core.trx"
+
+      - name: Restore desktop app
+        run: dotnet restore desktop/AutoSkip.Desktop/AutoSkip.Desktop.csproj --runtime win-x64
+
+      - name: Publish portable Windows executable
+        run: dotnet publish desktop/AutoSkip.Desktop/AutoSkip.Desktop.csproj --configuration Release --runtime win-x64 --self-contained true --no-restore --output desktop/artifacts/AutoSkip-Desktop-win-x64
+
+      - name: Verify packaged executable
+        shell: pwsh
+        run: |
+          $exe = 'desktop/artifacts/AutoSkip-Desktop-win-x64/AutoSkip.Desktop.exe'
+          if (-not (Test-Path -LiteralPath $exe -PathType Leaf)) {
+            throw "Expected executable was not produced: $exe"
+          }
+          Get-FileHash -Algorithm SHA256 -LiteralPath $exe |
+            Format-List Algorithm, Hash, Path |
+            Out-File -Encoding utf8 'desktop/artifacts/AutoSkip-Desktop-win-x64/SHA256.txt'
+          Copy-Item -LiteralPath 'desktop/README.md' -Destination 'desktop/artifacts/AutoSkip-Desktop-win-x64/README.md'
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: AutoSkip-Desktop-win-x64-portable
+          path: desktop/artifacts/AutoSkip-Desktop-win-x64/
+          if-no-files-found: error
+          retention-days: 30

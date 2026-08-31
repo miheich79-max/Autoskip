@@ -4,3 +4,9 @@ local.properties
 **/build/
 *.iml
 
+# .NET desktop build output
+**/bin/
+**/obj/
+TestResults/
+desktop/artifacts/
+
